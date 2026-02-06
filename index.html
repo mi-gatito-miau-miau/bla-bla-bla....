@@ -2,248 +2,206 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>Epic RPG Ultimate</title>
+<title>3D Adventure Game</title>
 <style>
-body{margin:0;overflow:hidden;background:black;font-family:monospace}
-#hud{position:fixed;top:10px;left:10px;color:white;z-index:10}
-#inventory,#questlog{
-  position:fixed;top:50%;left:50%;
-  transform:translate(-50%,-50%);
-  background:#111;padding:10px;border:1px solid #555;
-  display:none;color:white
+body { margin:0; overflow:hidden; background:black; }
+#ui {
+  position: fixed;
+  top: 10px;
+  left: 10px;
+  color: white;
+  font-family: monospace;
+  background: rgba(0,0,0,0.5);
+  padding: 10px;
+  border-radius: 8px;
 }
-.slot{width:40px;height:40px;border:1px solid #777;display:inline-block;margin:4px;text-align:center}
-#minimap{
-  position:fixed;right:10px;bottom:10px;
-  width:150px;height:150px;
-  background:#222;border:1px solid #555
+#inventory {
+  display:none;
+  position: fixed;
+  bottom: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0,0,0,0.8);
+  padding: 10px;
+  color: white;
+}
+#minimap {
+  position: fixed;
+  top: 10px;
+  right: 10px;
+  width: 150px;
+  height: 150px;
+  background: #111;
+  border: 2px solid white;
 }
 </style>
 </head>
 <body>
 
-<div id="hud">
-❤️ <span id="hp"></span>
-💰 <span id="gold"></span>
-🗝️ <span id="keys"></span>
-🌙 <span id="time"></span>
-📜 <span id="quest"></span>
+<div id="ui">
+HP: <span id="hp">100</span><br>
+Score: <span id="score">0</span><br>
+Stage: <span id="stage">1</span>
 </div>
 
-<div id="inventory">
-<h3>🎒 Inventory (I)</h3>
-<div id="slots"></div>
-</div>
-
-<div id="questlog">
-<h3>🎭 Quest</h3>
-<div id="questText"></div>
-</div>
-
+<div id="inventory">🎒 Inventory: Sword, Key</div>
 <canvas id="minimap"></canvas>
 
-<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.152.2/build/three.min.js"></script>
+
 <script>
-/* ================= CORE ================= */
-const scene=new THREE.Scene();
-scene.fog=new THREE.Fog(0x88aacc,30,400);
-const camera=new THREE.PerspectiveCamera(70,innerWidth/innerHeight,0.1,1000);
-const renderer=new THREE.WebGLRenderer({antialias:true});
-renderer.setSize(innerWidth,innerHeight);
-renderer.shadowMap.enabled=true;
+// ================== SCENE ==================
+const scene = new THREE.Scene();
+scene.fog = new THREE.Fog(0x000000, 10, 80);
+
+const camera = new THREE.PerspectiveCamera(75, innerWidth/innerHeight, 0.1, 1000);
+const renderer = new THREE.WebGLRenderer({antialias:true});
+renderer.setSize(innerWidth, innerHeight);
 document.body.appendChild(renderer.domElement);
 
-/* ================= LIGHT + DAY/NIGHT ================= */
-let timeOfDay=0;
-const sun=new THREE.DirectionalLight(0xffffff,1.2);
-sun.position.set(100,200,100);
-sun.castShadow=true;
+// ================== LIGHT ==================
+const sun = new THREE.DirectionalLight(0xffffff, 1);
+sun.position.set(10,20,10);
 scene.add(sun);
-const ambient=new THREE.AmbientLight(0x404040,0.5);
+
+const ambient = new THREE.AmbientLight(0x404040);
 scene.add(ambient);
 
-/* ================= WORLD ================= */
-const ground=new THREE.Mesh(
-  new THREE.PlaneGeometry(800,800).rotateX(-Math.PI/2),
-  new THREE.MeshStandardMaterial({color:0x3e8e41})
-);
-ground.receiveShadow=true;
-scene.add(ground);
-
-/* ================= PLAYER ================= */
-const player=new THREE.Object3D();
-scene.add(player);
-player.position.set(0,2,0);
-
-let stats={
-  hp:100,maxHP:100,gold:0,keys:0,damage:15,speed:0.15
+// ================== PLAYER ==================
+const player = {
+  hp:100,
+  speed:0.15,
+  score:0,
+  keys:0
 };
 
-const body=new THREE.Mesh(
-  new THREE.CapsuleGeometry(0.5,1.2),
-  new THREE.MeshStandardMaterial({color:0x3366ff})
+const playerMesh = new THREE.Mesh(
+  new THREE.CapsuleGeometry(0.5,1),
+  new THREE.MeshStandardMaterial({color:0x00ffcc})
 );
-body.castShadow=true;
-player.add(body);
+scene.add(playerMesh);
+playerMesh.position.y = 1;
 
-/* ================= WEAPON ================= */
-const sword=new THREE.Mesh(
-  new THREE.BoxGeometry(0.1,1.1,0.15),
-  new THREE.MeshStandardMaterial({color:0xdddddd,metalness:0.8})
+camera.position.set(0,2,5);
+
+// ================== WEAPON ==================
+const sword = new THREE.Mesh(
+  new THREE.BoxGeometry(0.1,1,0.2),
+  new THREE.MeshStandardMaterial({color:0xdddddd})
 );
-sword.position.set(0.7,0.6,0);
-player.add(sword);
+sword.position.set(0.5,-0.5,-1);
+camera.add(sword);
+scene.add(camera);
 
-/* ================= CASTLE + DOOR ================= */
-const castle=new THREE.Mesh(
-  new THREE.BoxGeometry(10,6,10),
-  new THREE.MeshStandardMaterial({color:0x777777})
-);
-castle.position.set(30,3,-30);
-scene.add(castle);
+let attacking = false;
+let attackTimer = 0;
 
-const door=new THREE.Mesh(
-  new THREE.BoxGeometry(2,3,0.5),
-  new THREE.MeshStandardMaterial({color:0x552200})
-);
-door.position.set(30,1.5,-25);
-door.locked=true;
-scene.add(door);
-
-/* ================= NPC QUEST ================= */
-const npc=new THREE.Mesh(
-  new THREE.BoxGeometry(1,2,1),
-  new THREE.MeshStandardMaterial({color:0xffff00})
-);
-npc.position.set(-10,1,-10);
-scene.add(npc);
-
-let quest={active:true,done:false,text:"Find a key and open the castle door"};
-
-/* ================= ENEMY + BOSS ================= */
-let enemies=[];
-function spawnEnemy(boss=false){
-  const e=new THREE.Mesh(
-    new THREE.BoxGeometry(boss?3:1, boss?4:1.5, boss?3:1),
-    new THREE.MeshStandardMaterial({color:boss?0x550000:0xaa0000})
+// ================== WALLS ==================
+const walls = [];
+function wall(x,z,w,h){
+  const m = new THREE.Mesh(
+    new THREE.BoxGeometry(w,3,h),
+    new THREE.MeshStandardMaterial({color:0x666666})
   );
-  e.hp=boss?300:40;
-  e.boss=boss;
-  e.cooldown=0;
-  e.position.set((Math.random()-0.5)*200,1,(Math.random()-0.5)*200);
+  m.position.set(x,1.5,z);
+  scene.add(m);
+  walls.push(m);
+}
+wall(0,-10,20,1);
+wall(0,10,20,1);
+wall(-10,0,1,20);
+wall(10,0,1,20);
+
+// ================== ENEMY ==================
+const enemies=[];
+function spawnEnemy(x,z,isBoss=false){
+  const e = new THREE.Mesh(
+    new THREE.BoxGeometry(1,2,1),
+    new THREE.MeshStandardMaterial({color:isBoss?0xff0000:0x8800ff})
+  );
+  e.position.set(x,1,z);
+  e.hp = isBoss ? 50 : 10;
+  e.boss = isBoss;
   scene.add(e);
   enemies.push(e);
 }
-spawnEnemy();
-spawnEnemy(true);
+spawnEnemy(3,3);
+spawnEnemy(-4,-3,true);
 
-/* ================= INVENTORY ================= */
-let inventory=["🗝️","🧪"];
-function updateInventory(){
-  const s=document.getElementById("slots");
-  s.innerHTML="";
-  inventory.forEach(i=>s.innerHTML+=`<div class="slot">${i}</div>`);
-}
-updateInventory();
+// ================== INPUT ==================
+const keys = {};
+onkeydown = e => keys[e.key.toLowerCase()] = true;
+onkeyup = e => keys[e.key.toLowerCase()] = false;
 
-/* ================= SOUND ================= */
-const bgm=new Audio("https://cdn.pixabay.com/audio/2022/03/15/audio_8bcd6b28c2.mp3");
-bgm.loop=true; bgm.volume=0.3; bgm.play();
+onclick = () => attacking = true;
 
-/* ================= SAVE / LOAD ================= */
-function saveGame(){
-  localStorage.setItem("save",JSON.stringify({stats,inventory,quest}));
-}
-function loadGame(){
-  const d=JSON.parse(localStorage.getItem("save"));
-  if(!d)return;
-  stats=d.stats; inventory=d.inventory; quest=d.quest;
-  updateInventory();
-}
-
-/* ================= INPUT ================= */
-const keys={};
-addEventListener("keydown",e=>{
-  keys[e.key.toLowerCase()]=true;
-  if(e.key==="i")toggle("inventory");
-  if(e.key==="s")saveGame();
-  if(e.key==="l")loadGame();
-  if(e.key==="e")interact();
-});
-addEventListener("keyup",e=>keys[e.key.toLowerCase()]=false);
-
-/* ================= INTERACT ================= */
-function interact(){
-  if(player.position.distanceTo(door.position)<3 && door.locked && stats.keys>0){
-    door.locked=false;
-    scene.remove(door);
-    stats.keys--;
-    quest.done=true;
+// ================== COLLISION ==================
+function collides(pos){
+  for(let w of walls){
+    if(pos.distanceTo(w.position) < 1.2) return true;
   }
-  if(player.position.distanceTo(npc.position)<3){
-    document.getElementById("questlog").style.display="block";
-    document.getElementById("questText").textContent=quest.text;
-  }
-}
-function toggle(id){
-  const e=document.getElementById(id);
-  e.style.display=e.style.display==="block"?"none":"block";
+  return false;
 }
 
-/* ================= MINIMAP ================= */
-const map=document.getElementById("minimap");
-const mctx=map.getContext("2d");
+// ================== LOOP ==================
+let dayTime = 0;
 
-/* ================= GAME LOOP ================= */
-function loop(){
-  requestAnimationFrame(loop);
+function animate(){
+  requestAnimationFrame(animate);
 
-  if(keys.w)player.position.z-=stats.speed;
-  if(keys.s)player.position.z+=stats.speed;
-  if(keys.a)player.position.x-=stats.speed;
-  if(keys.d)player.position.x+=stats.speed;
+  // DAY / NIGHT
+  dayTime += 0.001;
+  sun.intensity = Math.sin(dayTime)*0.5 + 0.5;
 
-  enemies.forEach(e=>{
-    if(!e.parent)return;
-    e.lookAt(player.position);
-    e.translateZ(0.02);
-    if(e.boss && e.cooldown<=0){
-      e.cooldown=200;
-      stats.hp-=10; // special attack
-    }
-    e.cooldown--;
-  });
+  // MOVE
+  let dir = new THREE.Vector3();
+  if(keys.w) dir.z -= 1;
+  if(keys.s) dir.z += 1;
+  if(keys.a) dir.x -= 1;
+  if(keys.d) dir.x += 1;
+  dir.normalize();
 
-  // DAY/NIGHT
-  timeOfDay+=0.002;
-  sun.intensity=0.3+Math.sin(timeOfDay)*0.7;
-  document.getElementById("time").textContent=sun.intensity<0.5?"Night":"Day";
-
-  // HUD
-  document.getElementById("hp").textContent=stats.hp;
-  document.getElementById("gold").textContent=stats.gold;
-  document.getElementById("keys").textContent=stats.keys;
-  document.getElementById("quest").textContent=quest.done?"Done":"Active";
-
-  // MINIMAP
-  mctx.fillStyle="#000";mctx.fillRect(0,0,150,150);
-  mctx.fillStyle="blue";
-  mctx.fillRect(75,75,5,5);
+  let nextPos = playerMesh.position.clone().add(dir.multiplyScalar(player.speed));
+  if(!collides(nextPos)) playerMesh.position.copy(nextPos);
 
   camera.position.lerp(
-    new THREE.Vector3(player.position.x,player.position.y+8,player.position.z+14),0.08
+    new THREE.Vector3(
+      playerMesh.position.x,
+      playerMesh.position.y+1.5,
+      playerMesh.position.z+4
+    ),0.1
   );
-  camera.lookAt(player.position);
+  camera.lookAt(playerMesh.position);
+
+  // ATTACK
+  if(attacking){
+    attackTimer++;
+    sword.rotation.x = -attackTimer*0.2;
+    if(attackTimer>5){
+      for(let e of enemies){
+        if(e.position.distanceTo(playerMesh.position)<2){
+          e.hp -= 5;
+          if(e.hp<=0){
+            scene.remove(e);
+            player.score += 100;
+          }
+        }
+      }
+    }
+    if(attackTimer>10){
+      attackTimer=0;
+      attacking=false;
+      sword.rotation.x=0;
+    }
+  }
+
+  document.getElementById("hp").innerText = player.hp;
+  document.getElementById("score").innerText = player.score;
 
   renderer.render(scene,camera);
 }
-loop();
 
-addEventListener("resize",()=>{
-  camera.aspect=innerWidth/innerHeight;
-  camera.updateProjectionMatrix();
-  renderer.setSize(innerWidth,innerHeight);
-});
+animate();
 </script>
 </body>
 </html>
